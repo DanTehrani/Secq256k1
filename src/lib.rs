@@ -23,7 +23,7 @@ impl Curve for Secq256K1 {
     type UInt = U256;
 
     const ORDER: U256 =
-        U256::from_be_hex("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f");
+        U256::from_be_hex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
 }
 
 impl PrimeCurveParams for Secq256K1 {
@@ -40,10 +40,12 @@ impl PrimeCurveParams for Secq256K1 {
 
     const GENERATOR: (FieldElement, FieldElement) = (
         FieldElement::from_be_hex(
-            "76c39f5585cb160eb6b06c87a2ce32e23134e45a097781a6a24288e37702eda6",
+            //  "76c39f5585cb160eb6b06c87a2ce32e23134e45a097781a6a24288e37702eda6",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
         ),
         FieldElement::from_be_hex(
-            "3ffc646c7b2918b5dc2d265a8e82a7f7d18983d26e8dc055a4120ddad952677f",
+            //            "3ffc646c7b2918b5dc2d265a8e82a7f7d18983d26e8dc055a4120ddad952677f",
+            "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
         ),
     );
 }
