@@ -1,3 +1,5 @@
+use crate::wide64::WideScalar;
+
 use super::{FieldBytes, Secq256K1};
 
 use primeorder::elliptic_curve::{
@@ -18,7 +20,7 @@ use std::{
 type ScalarCore = primeorder::elliptic_curve::ScalarCore<Secq256K1>;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Scalar(ScalarCore);
+pub struct Scalar(pub ScalarCore);
 
 impl Field for Scalar {
     fn zero() -> Self {
@@ -162,28 +164,28 @@ impl SubAssign<&Scalar> for Scalar {
 impl Mul<Scalar> for Scalar {
     type Output = Scalar;
 
-    fn mul(self, _other: Scalar) -> Scalar {
-        unimplemented!();
+    fn mul(self, other: Scalar) -> Scalar {
+        WideScalar::mul_wide(&self, &other).reduce()
     }
 }
 
 impl Mul<&Scalar> for Scalar {
     type Output = Scalar;
 
-    fn mul(self, _other: &Scalar) -> Scalar {
-        unimplemented!();
+    fn mul(self, other: &Scalar) -> Scalar {
+        self.mul(*other)
     }
 }
 
 impl MulAssign<Scalar> for Scalar {
-    fn mul_assign(&mut self, _rhs: Scalar) {
-        unimplemented!();
+    fn mul_assign(&mut self, rhs: Scalar) {
+        *self = self.mul(rhs)
     }
 }
 
 impl MulAssign<&Scalar> for Scalar {
-    fn mul_assign(&mut self, _rhs: &Scalar) {
-        unimplemented!();
+    fn mul_assign(&mut self, rhs: &Scalar) {
+        *self = self.mul(*rhs)
     }
 }
 
@@ -303,5 +305,16 @@ mod tests {
         let b = Scalar::from(2u32);
         let c = a + b;
         assert_eq!(c, Scalar::from(3u32));
+    }
+
+    #[test]
+    fn mul() {
+        let a = Scalar::from_str_vartime(
+            "115792089237316195423570985008687907853269984665640564039457584007908834671662",
+        )
+        .unwrap();
+
+        let b = Scalar::from(3u32);
+        println!("{:?}", (a * b).0.to_string());
     }
 }
