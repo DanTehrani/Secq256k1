@@ -11,7 +11,6 @@ use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use hex_literal::hex;
 use num_bigint_dig::{BigUint, ModInverse};
-use primeorder::elliptic_curve::bigint::U256;
 use primeorder::elliptic_curve::subtle::{
     Choice, ConditionallySelectable, ConstantTimeEq, CtOption,
 };
@@ -981,10 +980,6 @@ impl FieldElement {
     /// Returns the SEC1 encoding of this field element.
     pub fn to_sec1(self) -> FieldBytes {
         *FieldBytes::from_slice(&self.to_be_bytes())
-    }
-
-    pub const fn from_be_hex(s: &str) -> Self {
-        Self::from_raw(*U256::from_be_hex(s).as_words())
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::wide64::WideScalar;
+use crate::field::field_secp::FieldElement;
 
 use super::{FieldBytes, Secq256K1};
 
@@ -165,7 +165,10 @@ impl Mul<Scalar> for Scalar {
     type Output = Scalar;
 
     fn mul(self, other: Scalar) -> Scalar {
-        WideScalar::mul_wide(&self, &other).reduce()
+        let self_as_f = FieldElement::from_bytes(&self.to_bytes()).unwrap();
+        let other_as_f = FieldElement::from_bytes(&other.to_bytes()).unwrap();
+        let result = self_as_f.mul(other_as_f);
+        Scalar::from_repr(*FieldBytes::from_slice(&result.to_be_bytes())).unwrap()
     }
 }
 
@@ -308,13 +311,17 @@ mod tests {
     }
 
     #[test]
-    fn mul() {
-        let a = Scalar::from_str_vartime(
-            "115792089237316195423570985008687907853269984665640564039457584007908834671662",
-        )
-        .unwrap();
+    fn test_all() {
+        let a = Scalar::from(2u64.pow(63) - 2);
+        let b = Scalar::from(2u64.pow(63) - 3);
+        let add = a + b;
+        let sub = a - b;
+        let mul = a * b;
+        let neg = -a;
 
-        let b = Scalar::from(3u32);
-        println!("{:?}", (a * b).0.to_string());
+        println!("add {:?}", add.0.to_string());
+        println!("sub {:?}", sub.0.to_string());
+        println!("mul {:?}", mul.0.to_string());
+        println!("neg {:?}", neg.0.to_string());
     }
 }

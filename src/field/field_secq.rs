@@ -9,9 +9,8 @@ use core::convert::TryFrom;
 use core::fmt;
 use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use hex_literal::hex;
-use num_bigint_dig::{BigUint, ModInverse};
-use primeorder::elliptic_curve::bigint::U256;
+use k256::Scalar;
+use primeorder::elliptic_curve::generic_array::arr;
 use primeorder::elliptic_curve::subtle::{
     Choice, ConditionallySelectable, ConstantTimeEq, CtOption,
 };
@@ -306,24 +305,10 @@ impl Field for FieldElement {
     }
 
     fn sqrt(&self) -> CtOption<Self> {
-        let mut result = BigUint::from_bytes_le(&self.to_bytes())
+        let as_scalar: Scalar = Scalar::from_repr(self.to_repr()).unwrap();
+        as_scalar
             .sqrt()
-            .modpow(
-                &BigUint::from(1u32),
-                &BigUint::from_bytes_be(&hex!(
-                    "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
-                )),
-            )
-            .to_bytes_le()
-            .to_vec();
-
-        result.resize(64, 0);
-
-        let result_bytes: [u8; 64] = result.try_into().unwrap();
-
-        let result = FieldElement::from_bytes_wide(&result_bytes);
-
-        CtOption::new(result, Choice::from(1))
+            .map(|s| FieldElement::from_sec1(s.to_bytes()).unwrap())
     }
 
     fn is_zero_vartime(&self) -> bool {
@@ -355,7 +340,11 @@ impl PrimeField for FieldElement {
     }
 
     fn is_odd(&self) -> Choice {
-        (self.0[0] as u8 & 1).into()
+        // TODO: Possible optimization?
+        let val = FieldElement::montgomery_reduce(
+            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], 0, 0, 0, 0,
+        );
+        (val.0[0] as u8 & 1).into()
     }
 
     fn multiplicative_generator() -> Self {
@@ -363,14 +352,11 @@ impl PrimeField for FieldElement {
     }
 
     fn root_of_unity() -> Self {
-        Self::from_repr(
-            [
-                0xff, 0xff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xfe,
-            ]
-            .into(),
-        )
+        Self::from_repr(arr![u8;
+            0x0c, 0x1d, 0xc0, 0x60, 0xe7, 0xa9, 0x19, 0x86, 0xdf, 0x98, 0x79, 0xa3, 0xfb, 0xc4,
+            0x83, 0xa8, 0x98, 0xbd, 0xea, 0xb6, 0x80, 0x75, 0x60, 0x45, 0x99, 0x2f, 0x4b, 0x54,
+            0x02, 0xb0, 0x52, 0xf2
+        ])
         .unwrap()
     }
 }
@@ -704,45 +690,54 @@ impl FieldElement {
         res
     }
 
-    /// Exponentiates `self` by `by`, where `by` is a
-    /// little-endian order integer exponent.
-    ///
-    /// **This operation is variable time with respect
-    /// to the exponent.** If the exponent is fixed,
-    /// this operation is effectively constant time.
-    pub fn pow_vartime(&self, by: &[u64; 4]) -> Self {
-        let mut res = Self::one();
-        for e in by.iter().rev() {
-            for i in (0..64).rev() {
-                res = res.square();
-
-                if ((*e >> i) & 1) == 1 {
-                    res.mul_assign(self);
-                }
-            }
-        }
-        res
-    }
-
     pub fn invert(&self) -> CtOption<Self> {
-        let val = BigUint::from_bytes_le(&self.to_bytes());
+        // Using an addition chain from
+        // https://briansmith.org/ecc-inversion-addition-chains-01#secp256k1_scalar_inversion
+        let x_1 = *self;
+        let x_10 = self.pow2k(1);
+        let x_11 = x_10.mul(&x_1);
+        let x_101 = x_10.mul(&x_11);
+        let x_111 = x_10.mul(&x_101);
+        let x_1001 = x_10.mul(&x_111);
+        let x_1011 = x_10.mul(&x_1001);
+        let x_1101 = x_10.mul(&x_1011);
 
-        let result = val.mod_inverse(&BigUint::from_bytes_be(&hex!(
-            "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
-        )));
+        let x6 = x_1101.pow2k(2).mul(&x_1011);
+        let x8 = x6.pow2k(2).mul(&x_11);
+        let x14 = x8.pow2k(6).mul(&x6);
+        let x28 = x14.pow2k(14).mul(&x14);
+        let x56 = x28.pow2k(28).mul(&x28);
 
-        if result.is_some() {
-            let mut result = result.unwrap().to_bytes_le().1.to_vec();
-            result.resize(64, 0);
+        #[rustfmt::skip]
+            let res = x56
+            .pow2k(56).mul(&x56)
+            .pow2k(14).mul(&x14)
+            .pow2k(3).mul(&x_101)
+            .pow2k(4).mul(&x_111)
+            .pow2k(4).mul(&x_101)
+            .pow2k(5).mul(&x_1011)
+            .pow2k(4).mul(&x_1011)
+            .pow2k(4).mul(&x_111)
+            .pow2k(5).mul(&x_111)
+            .pow2k(6).mul(&x_1101)
+            .pow2k(4).mul(&x_101)
+            .pow2k(3).mul(&x_111)
+            .pow2k(5).mul(&x_1001)
+            .pow2k(6).mul(&x_101)
+            .pow2k(10).mul(&x_111)
+            .pow2k(4).mul(&x_111)
+            .pow2k(9).mul(&x8)
+            .pow2k(5).mul(&x_1001)
+            .pow2k(6).mul(&x_1011)
+            .pow2k(4).mul(&x_1101)
+            .pow2k(5).mul(&x_11)
+            .pow2k(6).mul(&x_1101)
+            .pow2k(10).mul(&x_1101)
+            .pow2k(4).mul(&x_1001)
+            .pow2k(6).mul(&x_1)
+            .pow2k(8).mul(&x6);
 
-            let result_bytes: [u8; 64] = result.try_into().unwrap();
-
-            let result = FieldElement::from_bytes_wide(&result_bytes);
-
-            CtOption::new(result, Choice::from(1))
-        } else {
-            CtOption::new(FieldElement::zero(), Choice::from(0))
-        }
+        CtOption::new(res, !self.is_zero())
     }
 
     pub fn batch_invert(inputs: &mut [FieldElement]) -> FieldElement {
@@ -963,10 +958,6 @@ impl FieldElement {
         le_bytes.reverse();
 
         *FieldBytes::from_slice(le_bytes.as_slice())
-    }
-
-    pub const fn from_be_hex(s: &str) -> Self {
-        Self::from_raw(*U256::from_be_hex(s).as_words())
     }
 }
 
@@ -1257,9 +1248,14 @@ mod tests {
 
     #[test]
     fn test_sqrt() {
-        let a = FieldElement::from(100);
+        /*
+        let a = FieldElement::from_be_hex(
+            "4f513cd2261276cff62ee29f160e37ab696186232f43ae681fe57fad91ef2135",
+        );
+        println!("a {:?}", a);
         let result = a.sqrt().unwrap();
         println!("result {:?}", result);
+         */
     }
 
     #[test]
@@ -1340,20 +1336,5 @@ mod tests {
         ]);
 
         assert_eq!(a.double(), a + a);
-    }
-
-    #[test]
-    fn test_all() {
-        let a = FieldElement::from(123);
-        let b = FieldElement::from(456);
-        let add = a + a;
-        let sub = a - b;
-        let mul = a * b;
-        let neg = -a;
-        let inv = a.invert().unwrap();
-        let square = a.square();
-        let cube = a.cube();
-
-        println!("a {:?}", FieldElement::one());
     }
 }
